@@ -1,0 +1,769 @@
+﻿<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    circle {
+        fill-opacity: 1;
+        stroke: mediumblue;
+        stroke-width: 2px;
+    }
+
+    .text {
+        font: 12px sans-serif;
+        text-anchor: middle;
+        pointer-events: none;
+    }
+
+    .button {
+        fill: rgb(240,240,240);
+        stroke: rgb(120,120,120);
+        height: 20px;
+        width: 70px;
+    }
+
+    #display {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        word-break: break-all;
+    }
+
+    #tooltip {
+        font-family: simsun;
+        font-size: 12px;
+        width: 120px;
+        height: auto;
+        position: absolute;
+        text-align: center;
+        border-style: solid;
+        border-width: 1px;
+        background-color: lightsteelblue;
+        border-radius: 5px;
+        pointer-events: none;
+    }
+</style>
+
+<head>
+    <meta charset="utf-8">
+    <title>title</title>
+</head>
+<body bgcolor=lightblue>
+    <div id="panel"
+         style="position:absolute;
+                left:1000px;
+                top:8px;
+                width:500px;
+                height:70px;">
+    </div>
+    <div id="display"
+         style="background-color:#fff;
+                overflow:scroll;
+                width:510px;
+                height:647px;
+                position:absolute;
+                left:1000px;
+                top:80px">
+    </div>
+    <div id="filterLabel1"
+         style="position:absolute;
+                left:1000px;
+                top:44px;
+                font-size:12px">
+        minimal filter size
+    </div>
+    <div id="sizeInput"
+         style="position:absolute;
+                left:1120px;
+                top:40px">
+        <input name="filtersize"
+               style="width:90px"
+               type="number"
+               value="10"
+               id="filterSize" />
+    </div>
+    <div id="filterLabel2"
+         style="position:absolute;
+                left:1310px;
+                top:44px;
+                font-size:12px">
+        filter size
+    </div>
+    <div id="interestsLabel1"
+         style="position:absolute;
+                left:1160px;
+                top:14px;
+                font-size:12px">
+        interesting parts
+    </div>
+    <div id="interests"
+         style="position:absolute;
+                left:1270px;
+                top:10px">
+
+        <select id="interestsList"></select>
+    </div>
+    <div id="sizeRecommend"
+         style="position:absolute;
+                left:1370px;
+                top:40px">
+
+        <select id="sizesList"></select>
+    </div>
+</body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3.v3.min.js"></script>
+<script src="d3.min.js"></script>
+<script>
+    var sizesList = document.getElementById("sizesList");
+    var interestsList = document.getElementById("interestsList");
+
+    var mode = 0;
+    var autoSizeThres = 6;
+    function changeMode() { return mode == 0 ? 1 : 0; }
+
+    var colorScale = d3.scaleSequential(d3.interpolatePlasma);
+
+    var height = 720;
+    var width1 = 960;
+    var width2 = 540;
+    var svgMain = d3.select("body")
+        .append("svg")
+        .attr("width", width1)
+        .attr("height", height);
+
+    var svgPanel = d3.select("#panel")
+        .append("svg")
+        .attr("width", 500)
+        .attr("height", 70);
+
+    var graphBG = svgMain.append("g")
+        .append("rect")
+        .attr("height", height)
+        .attr("width", width1)
+        .attr("fill", "white");
+
+    var diameter = Math.min(+svgMain.attr("width"), +svgMain.attr("height"));
+    var g = svgMain.append("g")
+        .attr("id", "gMain");
+
+
+    var tooltip = d3.select("body")
+        .append("div")
+        .attr("id", "tooltip")
+        .style("z-index", "10")
+        .style("opacity", 0);
+
+    var helpG = svgMain.append("g")
+        .attr("transform", function (d) { return "translate(" + width1 + "," + height + ")"; });
+
+    var helpBg = helpG.append("rect")
+        .attr("x", -30)
+        .attr("y", -30)
+        .attr("width", 30)
+        .attr("height", 30)
+        .attr("fill", "white");
+
+    var helpBtn = helpG.append("image")
+        .attr("xlink:href", "help.png")
+        .attr("x", -30)
+        .attr("y", -30)
+        .attr("width", 30)
+        .attr("height", 30)
+        .on("mouseover", function () { helpIns.style("opacity", 0.8); })
+        .on("mouseout", function () { helpIns.style("opacity", 0); });
+
+    var helpIns = helpG.append("image")
+        .attr("xlink:href", "instruction.png")
+        .attr("x", - 400)
+        .attr("y", - 320)
+        .attr("width", 400)
+        .attr("height", 320)
+        .style("opacity", 0)
+        .style("pointer-events", "none");
+
+    var legendG = svgMain.append("g")
+        .attr("transform", function (d) { return "translate(" + width1 + "," + 0 + ")"; });
+
+    var legendBG = legendG.append("rect")
+        .attr("x", -110)
+        .attr("y", 10)
+        .attr("width", 100)
+        .attr("height", 336)
+        .attr("fill", "white");
+
+    var legendText = legendG.append("text")
+        .attr("dx", -107)
+        .attr("dy", 28)
+        .style("font-size", 16)
+        .text("density");
+
+    var legendRect = new Array();
+    var legendValue = new Array();
+    for (var i = 1; i <= 10; i++) {
+        var obj = legendG.append("rect")
+            .attr("x", -100)
+            .attr("y", 36 + 30 * (i - 1))
+            .attr("width", 40)
+            .attr("height", 30)
+            .attr("fill", colorScale(i / 10));
+        legendRect.push(obj);
+        obj = legendG.append("text")
+            .attr("dx", -55)
+            .attr("dy", 54 + 30 * (i - 1))
+            .style("font-size", 12)
+            .text(i / 10);
+        legendValue.push(obj);
+    }
+    var pack = d3.pack()
+        .size([diameter - 4, diameter - 4]);
+
+    var loadG = svgMain.append("g")
+        .style("pointer-events", "none");
+
+    var textLoad = loadG.append("text")
+        .attr("id", "load")
+        .attr("dy", 350)
+        .attr("dx", 350)
+        .style("font-size", 64);
+    var num = 1;
+    var timerLoad = d3.interval(loading, 700);
+
+    function loading() {
+        num++;
+        num = num % 4;
+        var txt = "loading";
+        for (var i = 0; i < num; i++)
+            txt = txt + ".";
+        textLoad.text(txt);
+    }
+
+    function startLoad() {
+        textLoad.transition()
+            .duration(400)
+            .style("opacity", 1);
+        textLoad.attr("dy", 350);
+    }
+    function stopLoad() {
+        textLoad.transition()
+            .duration(400)
+            .style("opacity", 0);
+        textLoad.attr("dy", -100);
+    }
+
+    d3.tsv("nd_vertices.tsv", function (error, info) {
+        if (error) throw error;
+        d3.json("nd_tree.json", function (error, root0) {
+            if (error) throw error;
+            function filterNoIndex(parent) {
+                for (var i = 0; i < parent.children.length; i++) {
+                    if (parent.children[i].index == undefined)
+                        parent.children.splice(i--, 1);
+                    else if (parent.children[i].children)
+                        filterNoIndex(parent.children[i]);
+                }
+                if (parent.children && parent.children.length == 0)
+                    delete parent.children;
+            }
+            filterNoIndex(root0);
+
+            function clearNests(parent) {
+                if (parent.children.length == 1) {
+                    if (parent.children[0].children && parent.children[0].children.length == 1
+                        && parent.children[0].children[0].children && parent.children[0].children[0].children.length == 1
+                        && parent.children[0].children[0].children[0].children && parent.children[0].children[0].children[0].children.length == 1)
+                        parent.children[0] = parent.children[0].children[0].children[0].children[0];//TODO:merge papers
+                }
+                for (var i = 0; i < parent.children.length; i++)
+                    if (parent.children[i].children)
+                        clearNests(parent.children[i]);
+            }
+            clearNests(root0);
+
+            function offsetSize(parent) {
+                var sizeSum = 0;
+                for (var i = 0; i < parent.children.length; i++)
+                    sizeSum += parent.children[i].size;
+                var offset = parent.size - sizeSum;
+                for (var i = 0; i < parent.children.length; i++)
+                    if (parent.children[i].children)
+                        offsetSize(parent.children[i]);
+                parent.size = offset;
+            }
+            offsetSize(root0);
+
+            root0 = d3.hierarchy(root0)
+                .sum(function (d) { return d.size; })
+                .sort(function (a, b) { return b.value - a.value; });
+
+            function button(x, y, name) {
+                this.g = svgPanel.append("g")
+                    .attr("transform", function (d) { return "translate(" + x + "," + y + ")"; });
+
+                this.rect = this.g.append("rect")
+                    .attr("class", "button")
+                    .on("mousedown", function () { d3.select(this).style("fill", d3.rgb(200, 200, 200)); })
+                    .on("mouseup", function () { d3.select(this).style("fill", d3.rgb(240, 240, 240)); });
+
+                this.text = this.g.append("text")
+                    .attr("dy", "1.2em")
+                    .attr("dx", 35)
+                    .attr("class", "text")
+                    .text(name);
+            }
+
+            var filterNum = 0;
+            var redrawBtn = new button(220, 35, "redraw");
+            redrawBtn.rect.on("click", function () {
+                filterNum = 0;
+                draw(root0.copy());
+            });
+
+            var redrawBtn2 = new button(420, 35, "redraw");
+            redrawBtn2.rect.on("click", function () {
+                filterNum = 1;
+                draw(root0.copy());
+            });
+
+            var interestBtn = new button(420, 5, "goto");
+
+            draw(root0.copy());
+            stopLoad();
+            var filterValue;
+            function draw(root) {
+                d3.selectAll(".node")
+                    .remove();
+
+                for (var i = 1; i <= 10; i++) {
+                    legendRect[i - 1].attr("fill", colorScale(i / 10));
+                    legendValue[i - 1].text(i / 10);
+                }
+
+                if (filterNum == 0)
+                    filterValue = document.getElementById("filterSize").value;
+                else {
+                    for (var i = 0; i < sizesList.options.length; i++)
+                        if (sizesList.options[i].selected == true)
+                            filterValue = sizesList.options[i].value;
+                }
+                var transform = Object.create(d3.zoomIdentity);
+
+                function filterSize(parent) {
+                    for (var i = 0; i < parent.children.length; i++) {
+                        if (parent.children[i].value < filterValue && parent.children[i].data.papers) {
+                            for (var j = 0, k = 0; j < parent.children[i].data.papers.length; j++) {
+                                var paper = parent.children[i].data.papers[j];
+                                for (; k < parent.data.papers.length; k++)
+                                    if (paper < parent.data.papers[k])
+                                        break;
+                                parent.data.papers.splice(k, 0, paper);
+                            }
+                            parent.children.splice(i--, 1);
+                        }
+                        else if (parent.children[i].children)
+                            filterSize(parent.children[i]);
+                    }
+                    if (parent.children.length == 1) {
+                        var child = new Object();
+                        child["value"] = 3;
+                        parent.children.push(child);
+                    }
+                    if (parent.children.length == 0)
+                        delete parent.children;
+                }
+                filterSize(root);
+
+                function setMax(parent) {
+                    var maxi = parent.children[0].value;
+                    for (var i = 1; i < parent.children.length; i++)
+                        if (maxi / parent.children[i].value > 4)
+                            maxi = parent.children[i].value;
+                        else break;
+                    for (var i = 0; i < parent.children.length; i++) {
+                        parent.children[i]["thres"] = maxi;
+                        if (parent.children[i].children)
+                            setMax(parent.children[i]);
+                    }
+                }
+                setMax(root);
+                root["thres"] = 0;
+
+                pack(root);
+
+                var nodeList = root.descendants();
+
+                var sizes = new Array();
+                var sizeThresholds = new Array();
+                for (var i = 0; i < nodeList.length; i++)
+                    if (nodeList[i].value >= filterValue)
+                        sizes.push(nodeList[i].value);
+                sizes.sort(function (a, b) { return a - b; });
+
+                sizeThresholds.push(sizes[0]);
+                for (var i = 0.75; i > 0.01; i = i * Math.pow(i, 0.5))
+                    sizeThresholds.push(sizes[sizes.length - Math.floor(sizes.length * i)]);
+
+                sizesList.innerHTML = "";
+                for (var i = 0; i < sizeThresholds.length; i++) {
+                    var opt = document.createElement("option");
+                    opt.value = sizeThresholds[i];
+                    opt.innerHTML = opt.value;
+                    sizesList.appendChild(opt);
+                }
+
+                var interests = new Array();
+                var sizeThres = 50;
+                var densityThres = 0.5;
+                for (var i = 0; i < nodeList.length; i++)
+                    if (nodeList[i].value >= sizeThres && nodeList[i].data.density >= densityThres) {
+                        interests.push(nodeList[i]);
+                        var opt = document.createElement("option");
+                        opt.value = nodeList[i].data.index;
+                        opt.innerHTML = "size:" + nodeList[i].value + "  density:" + nodeList[i].data.density.toFixed(2);
+                        interestsList.appendChild(opt);
+                    }
+
+                var node = g.selectAll(".node")
+                    .data(nodeList)
+                    .enter().append("g")
+                    .filter(function (d) { return d.data; })
+                    .attr("class", function (d) { return d.children ? "node" : "leaf node"; })
+                    .attr("transform", function (d) { return "translate(" + d.x + "," + d.y + ")"; })
+                    .style("fill", function (d) { return colorScale(d.data.density); })
+                    .on("click", function (d) {
+                        if (d3.event.altKey) {
+                            focusOn(d3.select(this));
+                            d3.event.stopPropagation();
+                            papers = new Array();
+                            getPapers(d);
+                            displayInformation(papers);
+                        }
+                    });
+
+                interestBtn.rect.on("click", function () {
+                    for (var i = 0; i < interestsList.options.length; i++)
+                        if (interestsList.options[i].selected == true) {
+                            node.each(function (d) {
+                                if (d.data.index == interestsList.options[i].value)
+                                    focusOn(d3.select(this));
+                            });
+                        }
+                });
+
+                function focusOn(selected) {
+                    selected.each(function (d) {
+                        if (d3.select(this).attr("id") == "selectedGroup") {
+                            d3.select(this)
+                                .attr("id", null);
+                            transform.k = 1;
+                            transform.x = 0;
+                            transform.y = 0;
+                        }
+                        else {
+                            d3.select(".selectedGroup")
+                                .attr("id", null);
+                            d3.select(this)
+                                .attr("id", "selectedGroup");
+                            transform.k = (height - 100) / (d.r * 2);
+                            transform.x = width1 / 2 - d.x * transform.k;
+                            transform.y = height / 2 - d.y * transform.k;
+                        }
+                        doTransform();
+                    });
+                }
+
+                var circles0 = node.append("circle")
+                    .each(function (d) { d.data["intersection"] = new Array(); })
+                    .style("stroke", "red")
+                    .style("pointer-events", "none");
+
+                var circles = node.append("circle")
+                    .each(function (d) { d.data["intersection"] = -1; })
+                    .style("stroke-dasharray", function (d) {
+                        return d.value / d.thres * 2 * Math.PI * d.r + "," + 2 * Math.PI * d.r;
+                    })
+                    .on("click", circelClick)
+                    .on("mouseover", circleOver)
+                    .on("dblclick", circleDblclick)
+                    .on("mouseout", circleOut);
+
+                console.log(circles);
+
+                //stopLoad();
+                doTransform();
+
+                function circelClick(d) {
+                    tooltip.interrupt()
+                        .style("top", d3.event.pageY - 24 + "px")
+                        .style("left", (d3.event.pageX + 10) + "px")
+                        .style("opacity", 0.8);
+                    if (mode == 1) {
+                        selectData = selected.datum();
+                        tooltip.html(" size:" + d.value + " density:" + (+d.data.density).toFixed(2) + " papers:" + d.data.papers.length + " intersection:" + d.data.intersection.length + " index:" + d.data.index);
+                        if (!(Math.sqrt(Math.pow(d.x - selectData.x, 2) + Math.pow(d.y - selectData.y, 2)) + d.r > selectData.r + 1))
+                            tooltip.html(" size:" + d.value + " density:" + (+d.data.density).toFixed(2) + " papers:" + d.data.papers.length + " intersection:" + selectIntersection.length + " index:" + d.data.index);
+                    }
+                    else tooltip.html(" size:" + d.value + " density:" + (+d.data.density).toFixed(2) + " papers:" + d.data.papers.length + " index:" + d.data.index);
+                    if (mode == 1) {
+                        selectData = selected.datum();
+                        if (Math.sqrt(Math.pow(d.x - selectData.x, 2) + Math.pow(d.y - selectData.y, 2)) + d.r > selectData.r + 1)
+                            displayInformation(d.data.intersection);
+                        else displayInformation(selectIntersection);
+                    }
+                    else {
+                        displayInformation(d.data.papers);
+                    }
+                }
+                var selected;
+                function circleDblclick(d) {
+                    mode = 1;
+                    legendText.text("intersection");
+                    circles.style("stroke-dasharray", undefined)
+                        .style("stroke-width", 0.5);
+                    circles0.style("opacity", 0)
+                        .style("pointer-events", "none");
+                    d3.select("#selected")
+                        .attr("id", null)
+                        .style("stroke", "mediumblue")
+                        .style("stroke-width", 0.5);
+                    selected = d3.select(this);
+                    selected.attr("id", "selected")
+                        .style("stroke", d3.rgb(150, 0, 0))
+                        .style("stroke-width", 6);
+
+                    setIntersection(selected);
+                    displayInformation(selectIntersection);
+                    d3.event.stopPropagation();
+                }
+                function circleOver(d) {
+                    d3.select(this)
+                        .style("stroke", "red");
+                    d3.event.stopPropagation();
+                }
+                function circleOut(d) {
+                    if (!(mode == 1 && d3.select(this).attr("id") == "selected"))
+                        d3.select(this)
+                            .style("stroke", "mediumblue");
+                    else {
+                        d3.select(this)
+                            .style("stroke", d3.rgb(150, 0, 0));
+                    }
+
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                    d3.event.stopPropagation();
+                }
+
+                graphBG.on("click", function () {
+                    mode = 0;
+                    legendText.text("density");
+                    for (var i = 1; i <= 10; i++) {
+                        legendRect[i - 1].attr("fill", colorScale(i / 10));
+                        legendValue[i - 1].text(i / 10);
+                    }
+                    circles0.style("opacity", 1);
+                    circles.style("stroke-width", 2)
+                        .style("fill", function (d) { return colorScale(d.data.density); });
+                    doTransform();
+                    //d3.event.stopPropagation();
+                });
+
+                d3.select("body")
+                    .on("keypress", function () {
+                        if (d3.event.key == "w")
+                            transform.y += 100;
+                        if (d3.event.key == "s")
+                            transform.y -= 100;
+                        if (d3.event.key == "a")
+                            transform.x += 100;
+                        if (d3.event.key == "d")
+                            transform.x -= 100;
+                        if (d3.event.key == "q") {
+                            transform.k *= 1.2;
+                            transform.x = transform.x * 1.2 - width1 / 2 * 0.2;
+                            transform.y = transform.y * 1.2 - height / 2 * 0.2;
+                        }
+                        if (d3.event.key == "e") {
+                            transform.k /= 1.2;
+                            transform.x = transform.x / 1.2 + width1 / 2 * (1 - 1 / 1.2);
+                            transform.y = transform.y / 1.2 + height / 2 * (1 - 1 / 1.2);
+                        }
+                        doTransform();
+                    });
+
+                function displayInformation(papersToDisplay) {
+                    if (papersToDisplay.length > 10000)
+                        txt = "Too many papers!"
+                    else {
+                        var txt = "";
+                        for (var i = 0; i < papersToDisplay.length; i++)
+                            if (!(i > 0 && papersToDisplay[i] == papersToDisplay[i - 1]))
+                                txt = txt + "" + info[papersToDisplay[i]].id + "\n" + info[papersToDisplay[i]].author + "\n" + info[papersToDisplay[i]].title + "\n\n";
+                        document.getElementById("display").innerHTML = txt;
+                    }
+                }
+
+                var panning = 0, beginPanX, beginPanY;
+                svgMain.on("wheel", myZoom)
+                    .on("mousedown", function () { panning = 1; beginPanX = d3.event.x; beginPanY = d3.event.y; d3.event.stopPropagation(); })
+                    .on("mousemove", function () {
+                        if (panning == 1) {
+                            transform.x += d3.event.x - beginPanX;
+                            transform.y += d3.event.y - beginPanY;
+                            beginPanX = d3.event.x;
+                            beginPanY = d3.event.y;
+                            doTransform();
+                        }
+                        d3.event.stopPropagation();
+                    })
+                    .on("mouseup", function () { panning = 0; d3.event.stopPropagation(); });
+
+                var paper;
+                var selectIntersection = new Array();
+                function setIntersection(parent) {
+                    selectIntersection.splice(0, selectIntersection.length);
+                    papers = [];
+                    var pd = parent.datum();
+                    getPapers(pd);
+                    papers.sort(function (a, b) { return a - b; });
+                    for (var i = 1; i < papers.length; i++)
+                        if (papers[i] == papers[i - 1])
+                            papers.splice(i--, 1);
+
+                    var circles = d3.selectAll("circle")
+                        .filter(function (d) {
+                            if (Math.sqrt(Math.pow(d.x - pd.x, 2) + Math.pow(d.y - pd.y, 2)) + d.r > pd.r + 1)
+                                return true;
+                            else return false;
+                        });
+                    var allPapers = [], intersection = new Array(circles.size());
+                    for (var i = 0; i < intersection.length; i++)
+                        intersection[i] = new Array();
+                    circles.each(function (d, i) {
+                        if (d.data.papers)
+                            for (var j = 0; j < d.data.papers.length; j++) {
+                                var paper = new Object();
+                                paper["id"] = d.data.papers[j];
+                                paper["index"] = i;
+                                allPapers.push(paper);
+                            }
+                    });
+                    allPapers.sort(function (a, b) { return a.id - b.id; });
+                    var nextLeft = 0, p;
+                    for (var i = 0; i < papers.length; i++) {
+                        p = -1;
+                        for (var left = nextLeft, right = allPapers.length - 1; left <= right;) {
+                            mid = Math.round((left + right) / 2);
+                            if (papers[i] < allPapers[mid].id)
+                                right = mid - 1;
+                            else if (papers[i] > allPapers[mid].id)
+                                left = mid + 1;
+                            else {
+                                p = mid;
+                                break;
+                            }
+                        }
+                        if (p > 0 && papers[i] == allPapers[p].id) {
+                            while (p > 0 && papers[i] == allPapers[p - 1].id)
+                                p--;
+                            for (; p < allPapers.length && papers[i] == allPapers[p].id; p++) {
+                                intersection[allPapers[p].index].push(allPapers[p].id);
+                                selectIntersection.push(allPapers[p].id);
+                            }
+                            nextLeft = p;
+                        }
+                        else nextLeft = left;
+                    }
+                    var intersectionSize = new Array();
+                    for (var i = 0; i < intersection.length; i++)
+                        intersectionSize.push(intersection[i].length);
+                    var copyIS = intersectionSize.sort(function (a, b) { return a - b; });
+                    for (var start = 0; copyIS[start] == 0; start++);
+                    var thres = new Array();
+                    var colors = new Array();
+                    thres[0] = 0;
+                    thres[1] = 1;
+                    for (var i = 2, j = 0; j < copyIS.length; i++) {
+                        while (j < copyIS.length && copyIS[j] / thres[i - 1] < 1.1)
+                            j++;
+                        if (j < copyIS.length)
+                            thres[i] = copyIS[j];
+                    }
+                    console.log(thres);
+                    colors[0] = "#ffffff";
+                    colors[1] = "#ffcccc";
+                    colors[2] = "#ff9999";
+                    colors[3] = "#ff6666";
+                    colors[4] = "#ff3333";
+                    colors[5] = "#e60000";
+                    colors[6] = "#b30000";
+                    colors[7] = "#800000";
+                    colors[8] = "#4d0000";
+                    colors[9] = "#1a0000";
+
+
+                    var i;
+                    for (i = 1; i <= thres.length && i <= 10; i++) {
+                        legendRect[i - 1].attr("fill", colors[i - 1]);
+                        legendValue[i - 1].text(thres[i - 1]);
+                    }
+                    for (; i <= 10; i++) {
+                        legendRect[i - 1].attr("fill", "white");
+                        legendValue[i - 1].text("");
+                    }
+
+                    circles.style("fill", function (d, i) {
+                        if (!d.data.papers || d.data.papers.length == 0)
+                            return "white";
+                        d.data.intersection = intersection[i];
+                        for (var i = 1, c = colors[0]; i < thres.length; i++)
+                            if (d.data.intersection.length >= thres[i])
+                                c = colors[i];
+                            else break;
+                        return c;
+                    });
+
+                    d3.selectAll("circle")
+                        .filter(function (d) {
+                            if (Math.sqrt(Math.pow(d.x - pd.x, 2) + Math.pow(d.y - pd.y, 2)) + d.r <= pd.r + 1)
+                                return true;
+                            else return false;
+                        })
+                        .style("fill", "white");
+                }
+                function getPapers(p) {
+                    if (p.data && p.data.papers)
+                        for (var i = 0; i < p.data.papers.length; i++)
+                            papers.push(p.data.papers[i]);
+                    if (p.children)
+                        for (var i = 0; i < p.children.length; i++)
+                            getPapers(p.children[i]);
+                }
+
+
+                function doTransform() {
+                    node.attr("transform", function (d) { return "translate(" + (d.x * transform.k + transform.x) + "," + (d.y * transform.k + transform.y) + ")"; });
+                    circles.attr("r", function (d) { return d.r * transform.k; })
+                        .style("opacity", function (d) { return this.r.animVal.value > autoSizeThres ? 1 : 0; })
+                        .style("pointer-events", function (d) { return this.r.animVal.value > autoSizeThres ? "all" : "none"; });
+
+                    if (mode == 0) {
+                        circles.style("stroke-dasharray", function (d) {
+                            return d.value / d.thres * 2 * Math.PI * d.r * transform.k + "," + 2 * Math.PI * d.r * transform.k;
+                        });
+                        circles0.attr("r", function (d) { return d.r * transform.k; })
+                            .style("opacity", function (d) { return this.r.animVal.value > autoSizeThres ? 1 : 0; })
+                            .style("pointer-events", function (d) { return this.r.animVal.value > autoSizeThres ? "all" : "none"; });
+                    }
+                }
+
+                function myZoom() {
+                    transform.k = d3.event.wheelDelta > 0 ? transform.k * 1.2 : transform.k / 1.2;
+                    transform.x = d3.event.wheelDelta > 0 ? transform.x * 1.2 - d3.event.x * 0.2 : transform.x / 1.2 + d3.event.x * (1 - 1 / 1.2);
+                    transform.y = d3.event.wheelDelta > 0 ? transform.y * 1.2 - d3.event.y * 0.2 : transform.y / 1.2 + d3.event.y * (1 - 1 / 1.2);
+                    doTransform();
+                    d3.event.stopPropagation();
+                }
+
+            }
+        });
+    });
+</script>
